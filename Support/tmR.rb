@@ -1,10 +1,10 @@
 #!/usr/bin/ruby
 #
-# RMate v0.92, 2009-12-04.
+# RMate v0.95, 2012-03-07.
 # Copied, by Charilaos Skiadas, from RubyMate by Sune Foldager.
 # v0.1  (2005-08-12): Initial version.
 # v0.9  Heavily modified by Kevin Ballard
-# v0.92 Heavily modified by by Hans-Jörg Bibiko
+# v0.95 Heavily modified by by Hans-Jörg Bibiko
  
 require 'cgi'
 require 'fcntl'
@@ -113,9 +113,11 @@ tmpDir = File.join(ENV['TMP'] || "/tmp", "TM_R")
 recursive_delete(tmpDir) if File.exists?(tmpDir) # remove the temp dir if it's already there
 Dir::mkdir(tmpDir)
 
+if(%x{which #{(ENV['TM_REXEC']==nil) ? 'R' : ENV['TM_REXEC']}}.empty?)
+  print "<font color='red'>Please check TM_REXEC!</font><br>"
+end
 # Mechanism for dynamic reading
-# stdin, stdout, stderr = popen3("R", "--vanilla", "--no-readline", "--slave", "--encoding=UTF-8")
-stdin, stdout, stderr, pid = my_popen3("R --vanilla --slave --encoding=UTF-8 2>&1")
+stdin, stdout, stderr, pid = my_popen3("#{(ENV['TM_REXEC']==nil) ? 'R' : ENV['TM_REXEC']} --vanilla --slave --encoding=UTF-8 2>&1")
 # init the R slave
 stdin.puts(%{options(device="pdf")})
 stdin.puts(%{options(repos="#{cran}")})
@@ -137,14 +139,22 @@ Thread.new {
 }
 
 STDOUT.sync = true
+STDERR.sync = false
 
 descriptors = [stdout, stderr]
-descriptors.each { |fd| fd.fcntl(Fcntl::F_SETFL, Fcntl::O_NONBLOCK) }
+descriptors.each do |fd|
+  fd.fcntl(Fcntl::F_SETFL, Fcntl::F_GETFL | Fcntl::O_NONBLOCK)
+end
+
 until descriptors.empty?
+  sleep 0.00001
   select(descriptors).shift.each do |io|
     begin
       str = io.readline
     rescue
+      descriptors.delete io
+      io.close
+      break
     end
     if str.nil? or str.empty?
       descriptors.delete io
